@@ -193,7 +193,7 @@ type TestResult struct {
 	//   - a count ("2")
 	//   - a number rounded to one decimal place ("305.4", "+1.8")
 	//   - "true" or "false"
-	//   - a "v"-prefixed numeric version ("v25.3.0")
+	//   - a "v"-prefixed numeric version ("v25.3.0", "v25.3.0-rc.1")
 	//   - a closed-set code ("no-gpu-nodes")
 	//
 	// Never node names, IPs, hostnames, digests of cluster-specific content,

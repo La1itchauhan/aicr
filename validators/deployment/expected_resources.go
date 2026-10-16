@@ -1687,10 +1687,10 @@ func verifyRDMAFabricReadyEmit(ctx *validators.Context, fabricResource string, e
 			// on top (pkg/validator/v1/job_plan.go), so an exhausted never-ready
 			// poll (every RDMA node cordoned for maintenance, or a rollout slower
 			// than the budget) has margin to unwind and reach the terminal emit
-			// before the Job's SIGKILL. parseExtraSentinels keeps the LAST valid
-			// sentinel, so a clean exit's terminal emit wins and this floor is
-			// the disclosure of record only on the rarer path where the process
-			// is still killed before reaching it.
+			// before the Job's SIGKILL. Sentinels merge key-wise with later
+			// values winning, so a clean exit's terminal emit overwrites this
+			// floor's counts, and the floor is the disclosure of record only
+			// when the process is still killed before reaching it.
 			// validated=0: nothing is certified mid-poll. Only the structured
 			// Extra is emitted eagerly (not the stdout enumeration) — the Extra is
 			// the piece that survives redaction into the signed bundle (#1951/
