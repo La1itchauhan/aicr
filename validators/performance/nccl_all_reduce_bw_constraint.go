@@ -119,9 +119,8 @@ func ncclSkip(msg, code string) string {
 	return msg
 }
 
-// ncclPublishedFabric returns fabric, or "" unless variant is NET on the
-// baked-in EKS template. AICR_NCCL_FABRIC reaches only the NET check, and only
-// that variant rejects a Socket fallback, so no other run verified a fabric.
+// ncclPublishedFabric returns fabric for the NET variant on the baked-in EKS
+// template, and "" otherwise.
 func ncclPublishedFabric(variant ncclVariant, fabric ncclFabricType, customRuntime string, service recipe.CriteriaServiceType) ncclFabricType {
 	if variant != variantNET || customRuntime != "" || service != recipe.CriteriaServiceEKS {
 		return ""
