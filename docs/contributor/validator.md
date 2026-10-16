@@ -991,18 +991,12 @@ Cluster-aggregate checks that assert on an operator's aggregate status
 (`gpu-operator-health`) remain unaffected — DaemonSet operands ignore
 cordons.
 
-**Structured coverage survives redaction.** The `RESULT:` stdout line
-is echoed to the live CLI but is stripped from a signed bundle by the
-default (`minimal`) redaction policy (`pkg/evidence/redact`), so both
-`check-nvidia-smi` and the RDMA gate ALSO emit the coverage through
-`validators.EmitExtra` as low-cardinality counts
-(`nodesValidated`/`nodesTotal`) or a closed-set `skipReason` code. Those
-keys are the only ones that clear the fail-closed `ctrfExtraAllowlist`
-(a value that structurally looks like a node name or IP is dropped even
-under an allowed key), so a signed bundle records reduced coverage —
-e.g. a cordoned RDMA node narrowing the fabric cohort — without shipping
-any operator-identifying text. Node names appear only in the redacted
-stdout enumeration, never in the Extra channel. See #1951/#1952.
+**Structured coverage survives redaction.** Minimal redaction strips the
+`RESULT:` stdout line, so `check-nvidia-smi` and the RDMA gate also
+publish coverage in `extra` as `nodesValidated`/`nodesTotal` or a
+`skipReason` code. A signed bundle still records a cordoned node
+narrowing the cohort. Node names appear only in stdout, never in
+`extra`.
 
 For *deliberate*, durable exclusion of a node from GPU service (as
 opposed to transient cordon-for-maintenance), use the GPU Operator's
