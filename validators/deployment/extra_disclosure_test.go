@@ -183,6 +183,7 @@ func TestVerifyNodewrightReadyDisclosesSuppressedAsZero(t *testing.T) {
 func TestCheckGPUOperatorVersionDisclosesOutcome(t *testing.T) {
 	tests := []struct {
 		name       string
+		label      string
 		constraint string
 		wantErr    bool
 		wantSkip   bool
@@ -195,6 +196,22 @@ func TestCheckGPUOperatorVersionDisclosesOutcome(t *testing.T) {
 				validators.ExtraKeyDetectedVersion:  "v25.10.1",
 				validators.ExtraKeyVersionSatisfied: "true",
 			},
+		},
+		{
+			name:       "release candidate disclosed as evaluated",
+			label:      "v25.10.1-rc.2",
+			constraint: ">= v25.10.0",
+			want: map[string]string{
+				validators.ExtraKeyDetectedVersion:  "v25.10.1-rc.2",
+				validators.ExtraKeyVersionSatisfied: "true",
+			},
+		},
+		{
+			name:       "unparseable version has no verdict",
+			label:      "latest",
+			constraint: ">= v25.10.0",
+			wantErr:    true,
+			want:       map[string]string{validators.ExtraKeyDetectedVersion: "vlatest"},
 		},
 		{
 			name:       "not satisfied",
@@ -216,10 +233,14 @@ func TestCheckGPUOperatorVersionDisclosesOutcome(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			label := tt.label
+			if label == "" {
+				label = "25.10.1"
+			}
 			deploy := &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{
 				Name:      gpuOperatorNamespace,
 				Namespace: gpuOperatorNamespace,
-				Labels:    map[string]string{"app.kubernetes.io/version": "25.10.1"},
+				Labels:    map[string]string{"app.kubernetes.io/version": label},
 			}}
 			ctx := &validators.Context{
 				Ctx:             context.Background(),
@@ -244,6 +265,11 @@ func TestCheckGPUOperatorVersionDisclosesOutcome(t *testing.T) {
 			if !tt.wantSkip {
 				if v, ok := extra[validators.ExtraKeySkipReason]; ok {
 					t.Errorf("skipReason = %q on a non-skip outcome", v)
+				}
+			}
+			if _, want := tt.want[validators.ExtraKeyVersionSatisfied]; !want {
+				if v, ok := extra[validators.ExtraKeyVersionSatisfied]; ok {
+					t.Errorf("versionSatisfied = %q, want absent", v)
 				}
 			}
 		})

@@ -609,6 +609,31 @@ func TestCTRFAllowlistsExtra(t *testing.T) {
 			want: map[string]string{"detectedVersion": "v25"},
 		},
 		{
+			name: "pre-release versions survive",
+			in:   map[string]string{"detectedVersion": "v25.3.0-rc.1", "versionSatisfied": "true"},
+			want: map[string]string{"detectedVersion": "v25.3.0-rc.1", "versionSatisfied": "true"},
+		},
+		{
+			name: "undotted pre-release survives",
+			in:   map[string]string{"detectedVersion": "v26.7-beta2"},
+			want: map[string]string{"detectedVersion": "v26.7-beta2"},
+		},
+		{
+			name: "pre-release with build metadata is dropped",
+			in:   map[string]string{"detectedVersion": "v25.3.0-rc.1+acme"},
+			want: nil,
+		},
+		{
+			name: "over-long pre-release number is dropped",
+			in:   map[string]string{"detectedVersion": "v25.3.0-rc.12345"},
+			want: nil,
+		},
+		{
+			name: "non-numeric version is dropped",
+			in:   map[string]string{"detectedVersion": "vlatest"},
+			want: nil,
+		},
+		{
 			name: "version with free-text suffix is dropped",
 			in:   map[string]string{"detectedVersion": "v25.3.0-acme-prod"},
 			want: nil,

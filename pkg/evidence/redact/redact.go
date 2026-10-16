@@ -196,11 +196,19 @@ var ctrfSignedDecimalValue = regexp.MustCompile(`^[+-][0-9]{1,` + strconv.Itoa(m
 // be.
 const maxVersionComponent = 9999
 
+// ctrfPreReleaseSuffix matches the only version suffixes a minimal bundle may
+// publish ("-rc.1", "-beta2"). Any other suffix can carry free text.
+var ctrfPreReleaseSuffix = regexp.MustCompile(`^-(alpha|beta|rc)(\.?[0-9]{1,4})?$`)
+
 // isVersionValue reports whether v is a "v"-prefixed canonical version
-// ("v25.3.0"). The canonical form rejects pre-release and build suffixes,
-// which can carry free text.
+// ("v25.3.0"), optionally followed by a ctrfPreReleaseSuffix ("v25.3.0-rc.1").
+// Build metadata is rejected.
 func isVersionValue(v string) bool {
-	parsed, err := version.ParseCanonical(v)
+	base, suffix, hasSuffix := strings.Cut(v, "-")
+	if hasSuffix && !ctrfPreReleaseSuffix.MatchString("-"+suffix) {
+		return false
+	}
+	parsed, err := version.ParseCanonical(base)
 	return err == nil && parsed.Prefixed &&
 		max(parsed.Major, parsed.Minor, parsed.Patch) <= maxVersionComponent
 }
