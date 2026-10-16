@@ -434,51 +434,29 @@ emit(map[string]string{"nodesValidated": "1", "nodesTotal": "2"})
 emit(map[string]string{"skipReason": "no-gpu-nodes"})
 ```
 
-**Transport.** `EmitExtra` writes the map to stdout as one JSON line prefixed
-with `ctrf.ExtraLinePrefix` (`##AICR-EXTRA##` plus a space). Apart from the exit
-code and termination log, stdout is the only channel out of the pod.
-`EmitRuntimeProvenance` uses the same transport under
-`ctrf.ProvenanceLinePrefix` (`##AICR-PROVENANCE##` plus a space). The
-orchestrator (`pkg/validator/job.ExtractResult`) parses every sentinel line and
-strips it from the stored `stdout`.
+**Transport.** `EmitExtra` writes the map to stdout as one
+`##AICR-EXTRA## <json>` line, the only channel out of the pod besides the exit
+code and termination log. Provenance travels the same way as
+`##AICR-PROVENANCE## <json>`. The orchestrator strips both from the stored
+`stdout`.
 
-- `Extra` lines **merge key-wise** into `TestResult.Extra`. A later line wins
-  for a key it repeats, and keys set only by an earlier line are kept. A check
-  can publish its scope early and its measurement later, and a failure in
-  between still publishes the scope.
-- Provenance lines with both digests present are **last valid wins**, into
-  `TestResult.RuntimeProvenance`.
-- A malformed line is logged and skipped. It never discards an earlier valid
-  payload or flips a pass to an error.
+- `Extra` lines merge key-wise, a later value winning per key, so a check can
+  publish its scope before a run and its measurement after.
+- Provenance is last valid wins.
+- A malformed line is logged and skipped. It never discards an earlier
+  payload or changes the verdict.
 
-Keep the human `fmt.Printf` lines too. `--full` and live `aicr validate` output
-still use them.
+Keep the human-readable stdout lines too, for `--full` and live output.
 
-**Helpers.** These live in `validators`.
-
-| Helper | Behavior |
-|--------|----------|
-| `EmitExtraOrWarn(extra)` | `EmitExtra`, logging a write failure rather than returning it |
-| `SkipWithReason(code, reason)` | emits `skipReason: code`, returns `Skip(reason)` |
-| `FormatDecimal(v)` | one decimal place (`"305.4"`), which keeps measurements low-cardinality |
-| `FormatSignedDecimal(v)` | the same with an explicit sign (`"+1.8"`) |
-
-Key and skip-code constants (`ExtraKey*`, `SkipReason*`) live in
-`validators/extra_keys.go`. A test there fails when a constant has no redaction
-allowlist entry.
+Keys, skip codes, and value formatters live in `validators/extra_keys.go`. A
+test there fails when a key has no redaction allowlist entry.
 
 **Low-cardinality + allowlist contract.** `extra` values MUST be low-cardinality
 (`"2"`, `"305.4"`, `"true"`, `"v25.10.1"`, `"no-schedulable-gpu-nodes"`), never
-node names, IPs, hostnames, or URLs. `pkg/evidence/redact`'s
-`ctrfExtraAllowlist` enforces this at the **publication boundary**, since raw
-prefixed stdout can bypass any emission-side check. It fails closed on **key
-_and_ value**.
-
-- A key not in the table below is dropped.
-- A listed key whose value fails its validator is dropped. Examples are an IP
-  under `nodesTotal`, an unminted code under `skipReason`, an unbucketed
-  `305.44` under `achievedGbps`, and a branch name under `detectedVersion`.
-- A map with nothing left ships as absent, never as `extra: {}`.
+node names, IPs, hostnames, or URLs. Redaction enforces this at publication,
+since raw stdout can forge a sentinel. It drops an unlisted key, a value that
+fails its key's shape (an IP under `nodesTotal`, `305.44` under
+`achievedGbps`), and a map left empty.
 
 | Value shape | Keys |
 |-------------|------|
@@ -487,11 +465,11 @@ _and_ value**.
 | signed decimal (`+1.8`, `-12.3`) | `passMargin` (percent above or below `thresholdGbps`) |
 | `true` or `false` | `nodeLocal`, `versionSatisfied` |
 | `v` plus one to three numeric parts, optional `-alpha`, `-beta`, or `-rc` suffix (`v25.3.0-rc.1`) | `detectedVersion` |
-| closed set | `skipReason` (below), `runtimeSource` (`delivered-artifact`, `recipe-supplied-runtime`, `cluster-capability`), `transport` (`default`, `net`, `nvls`), `fabric` (`efa`, `roce`), `configuredPolicy` (every `pkg/validator/v1` GPU allocation policy), `resolvedMode` (`device-plugin-extended-resource`, `dra-resource-claim`) |
+| closed set | `skipReason` (below), `runtimeSource` (`delivered-artifact`, `recipe-supplied-runtime`, `cluster-capability`), `transport` (`default`, `net`, `nvls`), `fabric` (`efa`, `roce`), `configuredPolicy` (every GPU allocation policy), `resolvedMode` (`device-plugin-extended-resource`, `dra-resource-claim`) |
 
 Codes are closed sets rather than a shape regex, because a kebab-case regex
 would still pass an identifier like `customer-prod-cluster`. The `skipReason`
-codes (`ctrfSkipReasons`) are:
+codes are:
 
 `no-gpu-nodes`, `no-schedulable-gpu-nodes`, `nodes-busy`, `no-constraint`,
 `component-not-in-recipe`, `no-validation-input`, `unsupported-target`,
@@ -952,35 +930,17 @@ tagged with its cordon state, and:
    through `validators.EmitExtra` (#1951) — see **Structured coverage
    survives redaction** below.
 
-`expected-resources`' `rdmaFabricProbeCoverage` is node-scoped and follows this
-pattern too (#1952).
+`expected-resources`' RDMA fabric probe follows this pattern too. It validates
+only the schedulable RDMA-capable nodes, lists each cordoned one as
+`<node>: skipped (cordoned)`, and still counts it in `nodesTotal`. The probe
+re-runs on every poll but prints its enumeration and `RESULT:` line once, at
+the settled outcome.
 
-- It enumerates every GPU node via `helper.FindGpuNodes`, but validates only
-  the schedulable Mellanox RDMA-capable cohort for uniform allocatable fabric.
-- Each cordoned RDMA-capable node is disclosed (`<node>: skipped (cordoned)`)
-  and counted in `nodesTotal`. The printed total never narrows.
-- The probe re-runs on every poll (`verifyRDMAFabricReady`/`pollUntilStable`),
-  so the stdout enumeration and `RESULT:` line print **exactly once, at the
-  settled outcome** (ready or fail-closed), never per tick.
-
-The structured Extra is emitted twice.
-
-1. An **eager floor** on the first observation that enumerates any
-   RDMA-candidate node, with `nodesValidated=0` because nothing is certified
-   mid-poll.
-2. The terminal outcome, whose counts win on a clean exit because sentinels
-   merge key-wise with later values winning.
-
-The floor exists so a cordoned-node narrowing still reaches the signed bundle
-when the process is SIGKILLed before the terminal emit (#1952). The broader
-no-margin kill race (#2473) is bounded by `ValidatorJobDeadlineHeadroom`, which
-the Job's `activeDeadlineSeconds` adds on top of the catalog `timeout:` so an
-exhausted poll can unwind and reach the terminal emit. The floor remains
-defense-in-depth for a probe call that blocks past its own poll-budget
-cancellation.
-
-The gate stays fail-closed. "Could not observe the fabric" reports `0`
-validated and never reads as ready.
+It emits Extra twice, a floor with `nodesValidated=0` on the first observation
+of an RDMA-capable node, then the terminal counts, which win because sentinels
+merge key-wise. The floor keeps a cordoned node's narrowing in the signed
+bundle if the pod is killed before the terminal emit. The gate fails closed,
+so "could not observe the fabric" reports `0` validated.
 
 Unlike `check-nvidia-smi`, the RDMA gate never *skips* — it either
 certifies the cohort or fails closed — so it mints no `skipReason`
