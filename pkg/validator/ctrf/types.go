@@ -166,7 +166,9 @@ type Summary struct {
 	Stop int64 `json:"stop"`
 }
 
-// TestResult represents an individual test case result.
+// TestResult represents an individual test case result. Message and Stdout
+// are free-form text that minimal evidence redaction strips, while Extra is
+// the low-cardinality outcome data it keeps.
 type TestResult struct {
 	// Name is the name or title of the test case.
 	Name string `json:"name"`
@@ -187,9 +189,8 @@ type TestResult struct {
 	// Stdout contains standard output lines from test execution.
 	Stdout []string `json:"stdout,omitempty"`
 
-	// Extra holds low-cardinality outcome data that, unlike Stdout and
-	// Message, survives minimal redaction. It mirrors the CTRF spec's extra
-	// object. Each value must be one of:
+	// Extra holds low-cardinality outcome data, mirroring the CTRF spec's
+	// extra object. Each value must be one of:
 	//   - a count ("2")
 	//   - a number rounded to one decimal place ("305.4", "+1.8")
 	//   - "true" or "false"
@@ -197,8 +198,8 @@ type TestResult struct {
 	//   - a closed-set code ("no-gpu-nodes")
 	//
 	// Never node names, IPs, hostnames, digests of cluster-specific content,
-	// or other operator-identifying text. pkg/evidence/redact drops any key or
-	// value outside its allowlist. Keys are the validators.ExtraKey* constants.
+	// or other operator-identifying text. Keys are the validators.ExtraKey*
+	// constants.
 	Extra map[string]string `json:"extra,omitempty"`
 
 	// RuntimeProvenance binds a derived-runtime measurement to the templates it
