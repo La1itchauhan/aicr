@@ -523,12 +523,12 @@ func TestCTRFAllowlistsExtra(t *testing.T) {
 			in: map[string]string{
 				"achievedGbps": "305.4", "thresholdGbps": "300", "tolerancePct": "10",
 				"passMargin": "+1.8", "workerNodes": "2", "gpusInvolved": "16",
-				"transport": "nvls", "fabric": "efa",
+				"transport": "net", "fabric": "efa",
 			},
 			want: map[string]string{
 				"achievedGbps": "305.4", "thresholdGbps": "300", "tolerancePct": "10",
 				"passMargin": "+1.8", "workerNodes": "2", "gpusInvolved": "16",
-				"transport": "nvls", "fabric": "efa",
+				"transport": "net", "fabric": "efa",
 			},
 		},
 		{

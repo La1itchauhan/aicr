@@ -520,8 +520,9 @@ page are the contract.
 
 - NCCL publishes `transport`, `workerNodes`, and `gpusInvolved` before the
   benchmark runs, so a failed run still records its scope. `fabric` appears
-  only when `AICR_NCCL_FABRIC` selected the template. `tolerancePct` is the
-  slack below `thresholdGbps` that still passes.
+  only on `nccl-all-reduce-bw-net`, when `AICR_NCCL_FABRIC` selected the
+  baked-in EKS template. `tolerancePct` is the slack below `thresholdGbps`
+  that still passes.
 - `draReady` and `draDesired` come from the last observed DRA kubelet-plugin
   DaemonSet, and are absent if none was found. `nodewrightComplete` and
   `nodewrightExpected` are `0`/`0` when every Skyhook CR is suppressed.

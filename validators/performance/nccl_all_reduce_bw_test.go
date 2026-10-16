@@ -192,11 +192,11 @@ func TestNCCLScopeExtra(t *testing.T) {
 			},
 		},
 		{
-			name:    "default variant on the EKS RoCE path",
-			variant: variantDefault,
+			name:    "net variant on the EKS RoCE path",
+			variant: variantNET,
 			fabric:  fabricRoCE,
 			want: map[string]string{
-				"transport": "default", "fabric": "roce", "thresholdGbps": "300", "tolerancePct": "10",
+				"transport": "net", "fabric": "roce", "thresholdGbps": "300", "tolerancePct": "10",
 				"workerNodes": "2", "gpusInvolved": "16",
 			},
 		},
@@ -214,17 +214,20 @@ func TestNCCLScopeExtra(t *testing.T) {
 func TestNCCLPublishedFabric(t *testing.T) {
 	tests := []struct {
 		name          string
+		variant       ncclVariant
 		customRuntime string
 		service       recipe.CriteriaServiceType
 		want          ncclFabricType
 	}{
-		{"baked-in EKS template uses the selector", "", recipe.CriteriaServiceEKS, fabricEFA},
-		{"GKE template ignores the selector", "", recipe.CriteriaServiceGKE, ""},
-		{"recipe-supplied runtime owns its fabric", "runtime.yaml", recipe.CriteriaServiceEKS, ""},
+		{"baked-in EKS NET template uses the selector", variantNET, "", recipe.CriteriaServiceEKS, fabricEFA},
+		{"default variant never receives the selector", variantDefault, "", recipe.CriteriaServiceEKS, ""},
+		{"nvls variant never receives the selector", variantNVLS, "", recipe.CriteriaServiceEKS, ""},
+		{"GKE template ignores the selector", variantNET, "", recipe.CriteriaServiceGKE, ""},
+		{"recipe-supplied runtime owns its fabric", variantNET, "runtime.yaml", recipe.CriteriaServiceEKS, ""},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := ncclPublishedFabric(fabricEFA, tt.customRuntime, tt.service); got != tt.want {
+			if got := ncclPublishedFabric(tt.variant, fabricEFA, tt.customRuntime, tt.service); got != tt.want {
 				t.Errorf("ncclPublishedFabric() = %q, want %q", got, tt.want)
 			}
 		})

@@ -119,11 +119,11 @@ func ncclSkip(msg, code string) string {
 	return msg
 }
 
-// ncclPublishedFabric returns fabric, or "" when customRuntime is set or
-// service is not EKS, since AICR_NCCL_FABRIC selects only the baked-in EKS
-// templates.
-func ncclPublishedFabric(fabric ncclFabricType, customRuntime string, service recipe.CriteriaServiceType) ncclFabricType {
-	if customRuntime != "" || service != recipe.CriteriaServiceEKS {
+// ncclPublishedFabric returns fabric, or "" unless variant is NET on the
+// baked-in EKS template. AICR_NCCL_FABRIC reaches only the NET check, and only
+// that variant rejects a Socket fallback, so no other run verified a fabric.
+func ncclPublishedFabric(variant ncclVariant, fabric ncclFabricType, customRuntime string, service recipe.CriteriaServiceType) ncclFabricType {
+	if variant != variantNET || customRuntime != "" || service != recipe.CriteriaServiceEKS {
 		return ""
 	}
 	return fabric
@@ -566,7 +566,7 @@ func validateNcclAllReduceBw(ctx *validators.Context, constraint recipe.Constrai
 	}
 	slog.Info("GPU Configuration", "nodes", gpuConfig.WorkerCount, ", GPUs/node", gpuConfig.GPUCountPerNode, ", total GPUs", gpuConfig.TotalGPUCount)
 	// Published before the run so a failed or cut-short run still records it.
-	validators.EmitExtraOrWarn(ncclScopeExtra(variant, ncclPublishedFabric(fabric, customRuntime, target.service), threshold, gpuConfig.WorkerCount, gpuConfig.TotalGPUCount))
+	validators.EmitExtraOrWarn(ncclScopeExtra(variant, ncclPublishedFabric(variant, fabric, customRuntime, target.service), threshold, gpuConfig.WorkerCount, gpuConfig.TotalGPUCount))
 
 	// NCCL all-reduce tests EW (East-West) fabric between nodes and requires at least
 	// two GPU nodes. Skip gracefully rather than fail when only one node is available.
