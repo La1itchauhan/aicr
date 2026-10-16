@@ -1083,11 +1083,11 @@ After the command finishes:
 The bundle is **minimized by default**. `snapshot.yaml` keeps only an
 allowlisted set of fields (dropping node names, provider instance IDs, the
 node label/taint set, OS tuning, loaded modules, and systemd config) and the
-CTRF reports omit per-test stdout/message. Each test keeps its CTRF `extra`
-object, limited to allowlisted counts, measurements, thresholds, versions,
-allocation modes, and skip-reason codes, never node names or IPs. The signed
-predicate records the applied policy in a `redaction` block, and the bundle
-self-verifies exactly like a full one. Pass `--full` to publish the raw
+CTRF reports omit per-test stdout/message. Each test's CTRF `extra` keeps only
+allowlisted counts, measurements, thresholds, versions, allocation modes, and
+skip-reason codes, never node names or IPs, and is omitted when none remain.
+The signed predicate records the applied policy in a `redaction` block, and the
+bundle self-verifies exactly like a full one. Pass `--full` to publish the raw
 payloads instead.
 
 Commit `pointer.yaml` to its per-source path

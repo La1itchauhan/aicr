@@ -309,9 +309,9 @@ Bundles are **minimized by default**. The published `snapshot.yaml` keeps only
 an allowlisted set of fields and the CTRF reports omit per-test stdout/message,
 keeping sensitive operational detail (node names, provider instance IDs, the
 node label/taint set, OS tuning, raw container logs) out of the published
-artifact. Each test keeps its CTRF `extra` object, limited to allowlisted
-counts, measurements, thresholds, versions, allocation modes, and skip-reason
-codes, never node names or IPs. See [Structured evidence that survives
+artifact. Each test's CTRF `extra` keeps only allowlisted counts, measurements,
+thresholds, versions, allocation modes, and skip-reason codes, never node names
+or IPs, and is omitted when none remain. See [Structured evidence that survives
 redaction](../contributor/validator.md#structured-evidence-that-survives-redaction)
 for the keys. The predicate records the applied policy in a `redaction` block,
 which `aicr evidence verify` surfaces. Minimal bundles self-verify exactly like
