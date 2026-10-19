@@ -242,6 +242,40 @@ jobs:
         with:
           mode: enforced
 
+      # Stable tags only: start the release notes at the previous STABLE tag.
+      #
+      # GoReleaser picks the previous tag with
+      # `git describe --tags --abbrev=0 tags/<tag>^`, which counts pre-release
+      # tags. With an RC of this version still on the remote, the RC on an
+      # earlier commit becomes the base of the `changelog.use: github` compare
+      # and the GA notes list only the changes since that RC (#3289).
+      # GORELEASER_PREVIOUS_TAG overrides that lookup. The exclusion matches
+      # tools/changelog, which also skips pre-release tags (any tag with a
+      # hyphen).
+      #
+      # Pre-releases are left alone: an RC's notes still cover the changes since
+      # the previous tag of any kind, so rc2 lists what landed after rc1.
+      #
+      # GITHUB_ENV is inherited by the steps of the composite action below,
+      # which is where `make release` runs goreleaser.
+      - name: Pin the previous stable tag for release notes
+        if: needs.detect.outputs.is_prerelease == 'false'
+        shell: bash
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          if ! previous="$(git describe --tags --abbrev=0 --match 'v[0-9]*' --exclude '*-*' "refs/tags/${TAG}^")"; then
+            echo "::notice::no stable tag precedes ${TAG}; leaving the previous tag to GoReleaser"
+            exit 0
+          fi
+          if [[ ! "${previous}" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+            echo "::error::previous stable tag is not a plain SemVer tag: ${previous}"
+            exit 1
+          fi
+          echo "GORELEASER_PREVIOUS_TAG=${previous}" >> "${GITHUB_ENV}"
+          echo "Release notes for ${TAG} start at ${previous}"
+
       - name: Build and Release
         id: release
         uses: ./.github/actions/go-build-release
