@@ -31,7 +31,7 @@ set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BUMP="${SCRIPT_DIR}/bump"
 
-WORK_DIR="$(mktemp -d)"
+WORK_DIR="$(mktemp -d)" || exit 1
 trap 'rm -rf "${WORK_DIR}"' EXIT
 
 # Keep the host's git configuration (signing, hooks, templates) out of the
@@ -87,7 +87,8 @@ commit() {
 tag() {
     local name="$1" sha="${2:-HEAD}"
     tag_clock=$((tag_clock + 1))
-    GIT_COMMITTER_DATE="2020-01-01T00:00:$(printf '%02d' "${tag_clock}") +0000"         git tag -a "${name}" "${sha}" -m "Release ${name}"
+    GIT_COMMITTER_DATE="2020-01-01T00:00:$(printf '%02d' "${tag_clock}") +0000" \
+        git tag -a "${name}" "${sha}" -m "Release ${name}"
     git push -q origin "${name}"
 }
 
@@ -95,7 +96,8 @@ tag() {
 local_tag() {
     local name="$1"
     tag_clock=$((tag_clock + 1))
-    GIT_COMMITTER_DATE="2020-01-01T00:00:$(printf '%02d' "${tag_clock}") +0000"         git tag -a "${name}" -m "Release ${name}"
+    GIT_COMMITTER_DATE="2020-01-01T00:00:$(printf '%02d' "${tag_clock}") +0000" \
+        git tag -a "${name}" -m "Release ${name}"
 }
 
 # origin_tags prints the tags on origin, sorted, comma-separated.
@@ -122,9 +124,7 @@ expect_bump() {
     fi
     after="$(origin_tags)"
     local added
-    added="$(comm -13 <(tr ',' '
-' <<<"${before}") <(tr ',' '
-' <<<"${after}") | paste -sd, -)"
+    added="$(comm -13 <(tr ',' '\n' <<<"${before}") <(tr ',' '\n' <<<"${after}") | paste -sd, -)"
     if [[ "${added}" != "${expected}" ]]; then
         fail "${name}: tools/bump $* pushed '${added}', want '${expected}'"
         return
@@ -271,14 +271,14 @@ commit "feature a"
 tag v1.2.3
 commit "feature b"
 tag nightly   # not a version tag — must not be selected as the base
-expect_bump "minor ignores a non-version tag -> v1.3.0" v1.3.0 minor
+expect_bump "minor ignores a non-version tag" v1.3.0 minor
 
 new_repo
 commit "feature a"
 tag v1.2.3
 commit "feature b"
 tag nightly
-expect_bump "patch ignores a non-version tag -> v1.2.4" v1.2.4 patch
+expect_bump "patch ignores a non-version tag" v1.2.4 patch
 
 if ((fails > 0)); then
     echo "${fails} test(s) failed" >&2

@@ -25,9 +25,9 @@ import (
 	"time"
 )
 
-// notesBaseStepName is the on-tag.yaml step that pins GoReleaser's previous tag
-// for a stable release (#3289).
-const notesBaseStepName = "Pin the previous stable tag for release notes"
+// notesBaseStepName is the on-tag.yaml step that pins GoReleaser's current tag
+// and previous tag for a stable release (#3289).
+const notesBaseStepName = "Pin the release tag and the previous stable tag"
 
 // notesBaseStepTimeout bounds one run of the extracted step. It only runs a few
 // local git commands, so a hang means a broken fixture, not a slow machine.
@@ -40,6 +40,18 @@ const notesBaseStepTimeout = 30 * time.Second
 func notesBaseGoReleaserDefault(t *testing.T, dir, tag string) string {
 	t.Helper()
 	return notesBaseGit(t, dir, "describe", "--tags", "--abbrev=0", "tags/"+tag+"^")
+}
+
+// notesBaseGoReleaserCurrentDefault is the lookup GoReleaser v2.18.3 performs
+// for the current tag when GORELEASER_CURRENT_TAG is unset and no
+// git.prerelease_suffix is configured (getTag in internal/pipe/git): the first
+// line of `git tag --points-at HEAD --sort -version:refname`. git version-sorts
+// an RC ahead of its own GA, so with both tags on one commit this names the RC.
+func notesBaseGoReleaserCurrentDefault(t *testing.T, dir string) string {
+	t.Helper()
+	out := notesBaseGit(t, dir, "tag", "--points-at", "HEAD", "--sort", "-version:refname")
+	first, _, _ := strings.Cut(out, "\n")
+	return first
 }
 
 // TestReleaseNotesBaseStepShape pins how the step is wired. The behavior is
@@ -83,6 +95,20 @@ func TestReleaseNotesBaseStepShape(t *testing.T) {
 		t.Error("step must set GORELEASER_PREVIOUS_TAG")
 	}
 
+	// The current tag must be pinned before the previous-tag lookup, whose
+	// "no earlier stable tag" path exits the step early. Otherwise the first
+	// stable release would skip the pin.
+	current := strings.Index(script, "GORELEASER_CURRENT_TAG=${TAG}")
+	if current < 0 {
+		t.Error("step must set GORELEASER_CURRENT_TAG to the tag that triggered the run")
+	}
+	if lookup := strings.Index(script, "git describe"); current >= 0 && lookup >= 0 && current > lookup {
+		t.Error("GORELEASER_CURRENT_TAG must be written before the previous-tag lookup, which can exit early")
+	}
+	if exit := strings.Index(script, "exit 0"); current >= 0 && exit >= 0 && current > exit {
+		t.Error("GORELEASER_CURRENT_TAG must be written before the step's early exit")
+	}
+
 	// The tag reaches the shell through env, never interpolated into run.
 	if strings.Contains(script, "${{") {
 		t.Error("step run block must not interpolate GitHub expressions; pass the tag through env")
@@ -114,11 +140,16 @@ func TestReleaseNotesStartAtPreviousStableTag(t *testing.T) {
 		// at that commit, in order. The last commit is the one being released.
 		history [][]string
 		tag     string
-		// goreleaserDefault is what GoReleaser would choose with no override,
-		// or "" when the fixture is not about that failure.
+		// goreleaserDefault is what GoReleaser would choose as the previous tag
+		// with no override, or "" when the fixture is not about that failure.
 		goreleaserDefault string
+		// currentDefault is what GoReleaser would choose as the CURRENT tag
+		// with no override, or "" when that already equals tag. Set it where GA
+		// and an RC share a commit and the default is wrong.
+		currentDefault string
 		// want is the value exported as GORELEASER_PREVIOUS_TAG, or "" when the
-		// step must export nothing.
+		// step must not export one (no earlier stable tag). GORELEASER_CURRENT_TAG
+		// is exported in every case.
 		want string
 	}{
 		{
@@ -142,6 +173,7 @@ func TestReleaseNotesStartAtPreviousStableTag(t *testing.T) {
 			},
 			tag:               "v1.3.0",
 			goreleaserDefault: "v1.3.0-rc1",
+			currentDefault:    "v1.3.0-rc2",
 			want:              "v1.2.3",
 		},
 		{
@@ -205,7 +237,7 @@ func TestReleaseNotesStartAtPreviousStableTag(t *testing.T) {
 			want:              "v1.2.3",
 		},
 		{
-			name: "first stable release has no base and exports nothing",
+			name: "first stable release has no base but still pins the current tag",
 			history: [][]string{
 				{"v1.0.0-rc1"},
 				{"v1.0.0-rc2"},
@@ -213,6 +245,16 @@ func TestReleaseNotesStartAtPreviousStableTag(t *testing.T) {
 			},
 			tag:  "v1.0.0",
 			want: "",
+		},
+		{
+			name: "first stable release promoted on its RC's commit still pins the current tag",
+			history: [][]string{
+				{"v1.0.0-rc1"},
+				{"v1.0.0-rc2", "v1.0.0"},
+			},
+			tag:            "v1.0.0",
+			currentDefault: "v1.0.0-rc2",
+			want:           "",
 		},
 	}
 
@@ -227,29 +269,92 @@ func TestReleaseNotesStartAtPreviousStableTag(t *testing.T) {
 						got, tc.goreleaserDefault)
 				}
 			}
+			if tc.currentDefault != "" {
+				if got := notesBaseGoReleaserCurrentDefault(t, dir); got != tc.currentDefault {
+					t.Fatalf("fixture does not reproduce the bug: GoReleaser's own current tag = %q, want %q",
+						got, tc.currentDefault)
+				}
+			}
 
 			githubEnv, output, err := runNotesBaseStep(t, script, dir, tc.tag)
 			if err != nil {
 				t.Fatalf("step failed: %v\n%s", err, output)
 			}
-			if tc.want == "" {
-				if strings.TrimSpace(githubEnv) != "" {
-					t.Errorf("GITHUB_ENV = %q, want nothing exported", githubEnv)
-				}
-				return
+			want := "GORELEASER_CURRENT_TAG=" + tc.tag + "\n"
+			if tc.want != "" {
+				want += "GORELEASER_PREVIOUS_TAG=" + tc.want + "\n"
 			}
-			if want := "GORELEASER_PREVIOUS_TAG=" + tc.want + "\n"; githubEnv != want {
+			if githubEnv != want {
 				t.Errorf("GITHUB_ENV = %q, want %q\n%s", githubEnv, want, output)
 			}
 			if tc.goreleaserDefault != "" && strings.Contains(githubEnv, tc.goreleaserDefault) {
 				t.Errorf("GITHUB_ENV still points at the leftover pre-release %s", tc.goreleaserDefault)
 			}
+			if tc.currentDefault != "" && strings.Contains(githubEnv, "CURRENT_TAG="+tc.currentDefault) {
+				t.Errorf("GORELEASER_CURRENT_TAG is the RC %s, not the GA %s", tc.currentDefault, tc.tag)
+			}
 		})
 	}
 }
 
-// TestReleaseNotesBaseExportsOnlyValidTags keeps the step from writing an
-// arbitrary string into GITHUB_ENV. Tag names are attacker-influenced input to
+// TestReleaseCurrentTagIsGAWhenGAAndRCShareACommit is the scenario
+// `make bump-promote` creates: the GA tag lands on the RC's own commit. Left to
+// itself GoReleaser would name the RC the current tag, build the GA run as the
+// RC, and check it against the RC release that already exists. The step must
+// pin the current tag to the GA tag whichever pre-release it shares the commit
+// with.
+func TestReleaseCurrentTagIsGAWhenGAAndRCShareACommit(t *testing.T) {
+	t.Parallel()
+	script := notesBaseScript(t)
+
+	cases := []struct {
+		name    string
+		history [][]string
+		tag     string
+	}{
+		{
+			name:    "one RC shares the commit",
+			history: [][]string{{"v1.2.3"}, {"v1.3.0-rc1"}, {"v1.3.0-rc2", "v1.3.0"}},
+			tag:     "v1.3.0",
+		},
+		{
+			name:    "several pre-release kinds share the commit",
+			history: [][]string{{"v1.2.3"}, {"v1.3.0-beta.1", "v1.3.0-rc1", "v1.3.0-rc2", "v1.3.0"}},
+			tag:     "v1.3.0",
+		},
+		{
+			name:    "patch GA shares its commit with an RC",
+			history: [][]string{{"v1.2.3"}, {"v1.2.4-rc1", "v1.2.4"}},
+			tag:     "v1.2.4",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			dir := notesBaseRepo(t, tc.history)
+
+			// Precondition: without the pin GoReleaser picks a pre-release.
+			unpinned := notesBaseGoReleaserCurrentDefault(t, dir)
+			if !strings.Contains(unpinned, "-") {
+				t.Fatalf("fixture does not reproduce the bug: GoReleaser's own current tag = %q, want a pre-release", unpinned)
+			}
+
+			githubEnv, output, err := runNotesBaseStep(t, script, dir, tc.tag)
+			if err != nil {
+				t.Fatalf("step failed: %v\n%s", err, output)
+			}
+			if !strings.Contains(githubEnv, "GORELEASER_CURRENT_TAG="+tc.tag+"\n") {
+				t.Errorf("GITHUB_ENV = %q, want GORELEASER_CURRENT_TAG=%s\n%s", githubEnv, tc.tag, output)
+			}
+			if strings.Contains(githubEnv, "CURRENT_TAG="+unpinned) {
+				t.Errorf("GORELEASER_CURRENT_TAG is the pre-release %s that GoReleaser would pick on its own", unpinned)
+			}
+		})
+	}
+}
+
+// TestReleaseNotesBaseExportsOnlyValidTags keeps the step from exporting a
+// malformed previous tag into GITHUB_ENV. Tag names are attacker-influenced input to
 // a workflow that holds write and signing permissions.
 func TestReleaseNotesBaseExportsOnlyValidTags(t *testing.T) {
 	t.Parallel()
@@ -265,8 +370,8 @@ func TestReleaseNotesBaseExportsOnlyValidTags(t *testing.T) {
 	if err == nil {
 		t.Fatalf("step accepted a non-SemVer base tag; GITHUB_ENV = %q\n%s", githubEnv, output)
 	}
-	if strings.TrimSpace(githubEnv) != "" {
-		t.Errorf("GITHUB_ENV = %q, want nothing exported for a rejected tag", githubEnv)
+	if strings.Contains(githubEnv, "GORELEASER_PREVIOUS_TAG=") {
+		t.Errorf("GITHUB_ENV = %q, want no previous tag exported for a rejected tag", githubEnv)
 	}
 }
 

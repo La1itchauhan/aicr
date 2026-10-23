@@ -256,6 +256,12 @@ the RC's images, which stay on GHCR.
 Leave the RC releases and tags in place. They are history, and nothing has to
 be deleted before tagging GA:
 
+- **Release tag.** After `make bump-promote` the GA tag and its RC tag point at
+  the same commit, and git version-sorts `v1.3.0-rc2` ahead of `v1.3.0`. Left
+  alone, GoReleaser would take the RC as the tag being released and build the
+  GA run as that RC. For a stable tag, the release workflow sets
+  `GORELEASER_CURRENT_TAG` to the tag that triggered the run, so GA is always
+  released as GA.
 - **Release notes.** For a stable tag, the release workflow sets
   `GORELEASER_PREVIOUS_TAG` to the latest stable tag before the GA commit, so
   the GA notes always cover everything since the previous stable release. They
@@ -518,8 +524,9 @@ fi
 | Tests fail during release | Fix on `main`, cut new tag |
 | Lint errors | Run `make lint` locally before releasing |
 | Image push failure | Check GHCR permissions |
-| GA release notes list only changes since an RC | The `Pin the previous stable tag for release notes` step in the `build-ko` job should have set `GORELEASER_PREVIOUS_TAG`; check that it ran. It is skipped for pre-releases and for a tag with no earlier stable tag. See [Promoting an RC to GA](#promoting-an-rc-to-ga) |
-| `make bump-major`, `bump-minor`, or `bump-patch` computes an unexpected version | They count from the latest stable tag reachable from `HEAD` in your local clone. Run `git fetch origin --tags`, then `git describe --tags --abbrev=0 --exclude='*-*'` to see the base |
+| GA release notes list only changes since an RC | The `Pin the release tag and the previous stable tag` step in the `build-ko` job should have set `GORELEASER_PREVIOUS_TAG`; check that it ran. It is skipped for pre-releases, and sets no previous tag when no earlier stable tag exists. See [Promoting an RC to GA](#promoting-an-rc-to-ga) |
+| A GA run builds or publishes as its RC (RC version in the artifacts, or a conflict with the existing RC release) | The same step should have set `GORELEASER_CURRENT_TAG` to the GA tag; check its log. Without it, GoReleaser picks the RC when both tags are on one commit |
+| `make bump-major`, `bump-minor`, or `bump-patch` computes an unexpected version | They count from the latest stable tag reachable from `HEAD` in your local clone. Run `git fetch origin --tags`, then `git describe --tags --abbrev=0 --match='v[0-9]*' --exclude='*-*'` to see the base |
 | Promotion partially completed | Re-run failed jobs for the same workflow run; do not repoint aliases manually |
 | Version alias conflict | Stop and verify the existing digest; the workflow intentionally refuses overwrite |
 | Draft identity or asset check fails | Inspect the exact-tag draft; correct the name/tag or remove only verified stale assets, then re-run failed jobs |
