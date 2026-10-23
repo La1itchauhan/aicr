@@ -87,7 +87,7 @@ const (
 func ncclRunNamespace(variant ncclVariant) string {
 	variantLabel := string(variant)
 	if variantLabel == "" {
-		variantLabel = "default"
+		variantLabel = variantDefaultLabel
 	}
 	return fmt.Sprintf("%s-%s-%s", ncclWorkloadNamespacePrefix, variantLabel, deriveRunID())
 }
@@ -106,6 +106,61 @@ const (
 func skipMsgNCCLNoProfile(target ncclBenchmarkTarget, variant ncclVariant) string {
 	return fmt.Sprintf("skipped - benchmark profile %s does not implement the %s NCCL variant",
 		target.String(), ncclVariantDisplayName(variant))
+}
+
+// ncclBandwidthFloorFraction is the fraction of the threshold a run must reach
+// to pass.
+const ncclBandwidthFloorFraction = 0.9
+
+// ncclSkip publishes code as the skipReason and returns msg, which must be a
+// "skipped"-prefixed result string.
+func ncclSkip(msg, code string) string {
+	validators.EmitExtraOrWarn(map[string]string{validators.ExtraKeySkipReason: code})
+	return msg
+}
+
+// ncclPublishedFabric returns fabric for the NET variant on the baked-in EKS
+// template, and "" otherwise.
+func ncclPublishedFabric(variant ncclVariant, fabric ncclFabricType, customRuntime string, service recipe.CriteriaServiceType) ncclFabricType {
+	if variant != variantNET || customRuntime != "" || service != recipe.CriteriaServiceEKS {
+		return ""
+	}
+	return fabric
+}
+
+// ncclTransportCode returns the published transport code for variant.
+func ncclTransportCode(variant ncclVariant) string {
+	if variant == variantDefault {
+		return variantDefaultLabel
+	}
+	return string(variant)
+}
+
+// ncclScopeExtra returns the Extra for a run's scope and the floor it is held
+// to. fabric is omitted when empty.
+func ncclScopeExtra(variant ncclVariant, fabric ncclFabricType, threshold float64, workers, gpus int) map[string]string {
+	extra := map[string]string{
+		validators.ExtraKeyTransport:     ncclTransportCode(variant),
+		validators.ExtraKeyThresholdGbps: validators.FormatDecimal(threshold),
+		validators.ExtraKeyTolerancePct:  validators.FormatDecimal((1 - ncclBandwidthFloorFraction) * 100),
+		validators.ExtraKeyWorkerNodes:   strconv.Itoa(workers),
+		validators.ExtraKeyGPUsInvolved:  strconv.Itoa(gpus),
+	}
+	if fabric != "" {
+		extra[validators.ExtraKeyFabric] = string(fabric)
+	}
+	return extra
+}
+
+// ncclBandwidthExtra returns the Extra for bandwidth and its signed percent
+// margin over threshold. The margin is omitted when threshold is not
+// positive.
+func ncclBandwidthExtra(bandwidth, threshold float64) map[string]string {
+	extra := map[string]string{validators.ExtraKeyAchievedGbps: validators.FormatDecimal(bandwidth)}
+	if threshold > 0 {
+		extra[validators.ExtraKeyPassMargin] = validators.FormatSignedDecimal((bandwidth/threshold - 1) * 100)
+	}
+	return extra
 }
 
 // Package-level GVR definitions for Kubeflow Trainer CRDs used by both
@@ -164,6 +219,9 @@ const (
 	variantNET     ncclVariant = "net"
 	variantNVLS    ncclVariant = "nvls"
 )
+
+// variantDefaultLabel is the printed name of variantDefault.
+const variantDefaultLabel = "default"
 
 // ncclFabricType selects the inter-node fabric for the NET variant. Default EFA
 // preserves all existing behavior; roce (AICR_NCCL_FABRIC=roce) selects the
@@ -371,7 +429,7 @@ func validateNcclAllReduceBw(ctx *validators.Context, constraint recipe.Constrai
 	// Skip unless the validation targets a supported service + accelerator combination.
 	if ctx.ValidationInput == nil {
 		slog.Info("Skipping NCCL All Reduce bandwidth validation: no validation")
-		return skipMsgNCCLNoInput, true, nil
+		return ncclSkip(skipMsgNCCLNoInput, validators.SkipReasonNoValidationInput), true, nil
 	}
 
 	service := ctx.ValidationInput.Criteria.Service
@@ -448,9 +506,9 @@ func validateNcclAllReduceBw(ctx *validators.Context, constraint recipe.Constrai
 			// The profile itself is valid (resolveNCCLBenchmarkProfile fails
 			// closed on unknown pairs); it just doesn't implement this variant
 			// — e.g. gb200/eks covers net and nvls but not the default check.
-			return skipMsgNCCLNoProfile(target, variant), true, nil
+			return ncclSkip(skipMsgNCCLNoProfile(target, variant), validators.SkipReasonProfileLacksVariant), true, nil
 		}
-		return skipMsgNCCLNotImplemented, true, nil
+		return ncclSkip(skipMsgNCCLNotImplemented, validators.SkipReasonUnsupportedTarget), true, nil
 	}
 
 	// Extract threshold from constraint
@@ -506,6 +564,8 @@ func validateNcclAllReduceBw(ctx *validators.Context, constraint recipe.Constrai
 		return "", false, aicrErrors.Wrap(aicrErrors.ErrCodeInternal, "failed to determine GPU configuration", err)
 	}
 	slog.Info("GPU Configuration", "nodes", gpuConfig.WorkerCount, ", GPUs/node", gpuConfig.GPUCountPerNode, ", total GPUs", gpuConfig.TotalGPUCount)
+	// Published before the run so a failed or cut-short run still records it.
+	validators.EmitExtraOrWarn(ncclScopeExtra(variant, ncclPublishedFabric(variant, fabric, customRuntime, target.service), threshold, gpuConfig.WorkerCount, gpuConfig.TotalGPUCount))
 
 	// NCCL all-reduce tests EW (East-West) fabric between nodes and requires at least
 	// two GPU nodes. Skip gracefully rather than fail when only one node is available.
@@ -551,6 +611,7 @@ func validateNcclAllReduceBw(ctx *validators.Context, constraint recipe.Constrai
 		emitDiagnosticBlock("launcher log (bandwidth parse failed)", tailLines(strings.TrimSpace(logs), maxDiagLogLines))
 		return logs, false, aicrErrors.Wrap(aicrErrors.ErrCodeInternal, "failed to parse bandwidth from logs", err)
 	}
+	validators.EmitExtraOrWarn(ncclBandwidthExtra(bandwidth, threshold))
 
 	// For named variants, assert the expected transport actually carried traffic.
 	// This turns the variant label into a hard guarantee — a GB200 cluster with a
@@ -567,23 +628,27 @@ func validateNcclAllReduceBw(ctx *validators.Context, constraint recipe.Constrai
 
 	slog.Info("Measured bandwidth", "bandwidth", bandwidth)
 
-	// Check if bandwidth meets threshold (within 10% tolerance)
-	passed := bandwidth >= (threshold * 0.9)
-	actualValue := fmt.Sprintf("%.2f GB/s", bandwidth)
-	// Surface the resolved workload image in the structured evidence, not just
-	// slog output — issue #1751 criterion (c) asks for both. Omitted when the
-	// override wasn't set (the common case) to avoid noising every result.
+	actualValue, passed := ncclBandwidthVerdict(bandwidth, threshold, runtimeImage)
+	return actualValue, passed, nil
+}
+
+// ncclBandwidthVerdict returns the constraint report string as actual, naming
+// runtimeImage when set, and reports in passed whether bandwidth reaches
+// ncclBandwidthFloorFraction of threshold.
+func ncclBandwidthVerdict(bandwidth, threshold float64, runtimeImage string) (actual string, passed bool) {
+	passed = bandwidth >= (threshold * ncclBandwidthFloorFraction)
+	actual = fmt.Sprintf("%.2f GB/s", bandwidth)
 	if runtimeImage != "" {
-		actualValue = fmt.Sprintf("%.2f GB/s (runtime image: %s)", bandwidth, runtimeImage)
+		// The override goes in the report as well as the log.
+		actual = fmt.Sprintf("%.2f GB/s (runtime image: %s)", bandwidth, runtimeImage)
 	}
 
 	if passed {
-		slog.Info("Bandwidth validation passed", "bandwidth", bandwidth, "threshold", threshold*0.9, "tolerance", "10%")
+		slog.Info("Bandwidth validation passed", "bandwidth", bandwidth, "threshold", threshold*ncclBandwidthFloorFraction, "tolerance", "10%")
 	} else {
-		slog.Info("Bandwidth validation failed", "bandwidth", bandwidth, "threshold", threshold*0.9, "tolerance", "10%")
+		slog.Info("Bandwidth validation failed", "bandwidth", bandwidth, "threshold", threshold*ncclBandwidthFloorFraction, "tolerance", "10%")
 	}
-
-	return actualValue, passed, nil
+	return actual, passed
 }
 
 // verifyNCCLNamespaceNotLive fails closed if the given, already-fetched NCCL
@@ -1449,8 +1514,8 @@ func applyNCCLResources(ctx *validators.Context, dynamicClient dynamic.Interface
 			return aicrErrors.Wrap(aicrErrors.ErrCodeInternal, "failed to apply NCCL runtime image override", overrideErr)
 		}
 	}
-	if schedErr := applyNCCLWorkerScheduling(runtimeObj, effectiveNodeSelector, effectiveTolerations); schedErr != nil {
-		return aicrErrors.Wrap(aicrErrors.ErrCodeInternal, "failed to apply NCCL worker scheduling", schedErr)
+	if schedErr := scheduleNCCLRuntime(runtimeObj, effectiveNodeSelector, effectiveTolerations, plan); schedErr != nil {
+		return schedErr
 	}
 	if err = createUnstructured(ctx.Ctx, dynamicClient, trainingRuntimeGVR, config.Namespace, runtimeObj); err != nil {
 		return aicrErrors.Wrap(aicrErrors.ErrCodeInternal, "failed to apply training runtime", err)
@@ -2148,6 +2213,75 @@ func applyNCCLWorkerScheduling(obj *unstructured.Unstructured, nodeSelector map[
 		return aicrErrors.New(aicrErrors.ErrCodeInternal, `replicatedJob "node" not found in TrainingRuntime`)
 	}
 
+	return unstructured.SetNestedSlice(obj.Object, replicatedJobs, "spec", "template", "spec", "replicatedJobs")
+}
+
+// scheduleNCCLRuntime stamps worker scheduling, then pins the launcher to the
+// resulting worker placement. The pin is gated like the runtime image override:
+// a recipe-supplied runtime owns its launcher placement end to end.
+func scheduleNCCLRuntime(obj *unstructured.Unstructured, nodeSelector map[string]string, tolerations []v1.Toleration, plan *benchmarkRuntimePlan) error {
+	if err := applyNCCLWorkerScheduling(obj, nodeSelector, tolerations); err != nil {
+		return aicrErrors.Wrap(aicrErrors.ErrCodeInternal, "failed to apply NCCL worker scheduling", err)
+	}
+	if plan.recipeSupplied() {
+		return nil
+	}
+	if err := pinNCCLLauncherToWorkers(obj); err != nil {
+		return aicrErrors.Wrap(aicrErrors.ErrCodeInternal, "failed to pin NCCL launcher to workers", err)
+	}
+	return nil
+}
+
+// pinNCCLLauncherToWorkers copies the worker replicatedJob's final nodeSelector
+// and tolerations onto the launcher, so mpirun starts inside the worker cohort
+// where the shared benchmark image is already cached. Unpinned, the launcher
+// can land on a CPU node with a slow disk and spend all of NCCLTrainJobTimeout
+// pulling that multi-GB image while both workers sit Running. A worker with no
+// nodeSelector has no cohort to pin to, so the launcher keeps its own
+// placement; a runtime with no launcher (torchrun) is left unchanged.
+func pinNCCLLauncherToWorkers(obj *unstructured.Unstructured) error {
+	replicatedJobs, found, err := unstructured.NestedSlice(obj.Object, "spec", "template", "spec", "replicatedJobs")
+	if err != nil || !found {
+		return aicrErrors.New(aicrErrors.ErrCodeInternal, "replicatedJobs not found in TrainingRuntime")
+	}
+
+	var workerPodSpec, launcherPodSpec map[string]any
+	launcherFound := false
+	for _, jobRaw := range replicatedJobs {
+		jobMap, ok := jobRaw.(map[string]any)
+		if !ok {
+			continue
+		}
+		podSpec, _ := nestedMap(jobMap, "template", "spec", "template", "spec")
+		switch name, _, _ := unstructured.NestedString(jobMap, "name"); name {
+		case nodeJobName:
+			workerPodSpec = podSpec
+		case benchmarkLauncherJob:
+			launcherFound = true
+			launcherPodSpec = podSpec
+		}
+	}
+	if !launcherFound {
+		return nil
+	}
+	if launcherPodSpec == nil {
+		return aicrErrors.New(aicrErrors.ErrCodeInternal, "launcher pod spec not found in TrainingRuntime launcher job")
+	}
+	if workerPodSpec == nil {
+		return aicrErrors.New(aicrErrors.ErrCodeInternal, `replicatedJob "node" not found in TrainingRuntime`)
+	}
+
+	nodeSelector, _ := workerPodSpec["nodeSelector"].(map[string]any)
+	if len(nodeSelector) == 0 {
+		return nil
+	}
+	// SetNestedSlice deep-copies on write, so the launcher does not alias the
+	// worker's maps once stored.
+	launcherPodSpec["nodeSelector"] = nodeSelector
+	if tolerations, ok := workerPodSpec["tolerations"].([]any); ok && len(tolerations) > 0 {
+		launcherPodSpec["tolerations"] = tolerations
+	}
+	slog.Info("Pinning NCCL launcher to the worker node cohort", "selector", nodeSelector)
 	return unstructured.SetNestedSlice(obj.Object, replicatedJobs, "spec", "template", "spec", "replicatedJobs")
 }
 

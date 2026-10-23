@@ -44,6 +44,7 @@ import (
 const (
 	clusterAutoTestPrefix  = "cluster-auto-test-"
 	karpenterNodePoolLabel = "karpenter.sh/nodepool"
+	clusterAutoTestImage   = "docker.io/library/ubuntu:22.04"
 )
 
 type clusterAutoscalingReport struct {
@@ -358,7 +359,7 @@ func buildClusterAutoTestDeployment(name, namespace, nodePoolName string) *appsv
 					Containers: []corev1.Container{
 						{
 							Name:    "gpu-workload",
-							Image:   "ubuntu:22.04",
+							Image:   clusterAutoTestImage,
 							Command: []string{containerNameSleep, "120"},
 							Resources: corev1.ResourceRequirements{
 								Limits: corev1.ResourceList{
@@ -539,7 +540,7 @@ func checkPlatformAutoscaling(ctx *validators.Context) error {
 	case "aks":
 		return checkAKSAutoscaling(ctx)
 	default:
-		return validators.Skip("Karpenter not found and cluster platform not recognized (not EKS, GKE, or AKS)")
+		return validators.SkipWithReason(validators.SkipReasonUnrecognizedPlatform, "Karpenter not found and cluster platform not recognized (not EKS, GKE, or AKS)")
 	}
 }
 

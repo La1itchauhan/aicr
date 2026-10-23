@@ -382,44 +382,44 @@ jobs:
           # TestHealthEventsAnalyzerImagePinnedEverywhere fail if these drift
           # apart.
           - image: ghcr.io/nvidia/nvsentinel/kubernetes-object-monitor
-            tag: v1.26.0
+            tag: v1.28.0
           - image: ghcr.io/nvidia/nvsentinel/preflight
-            tag: v1.26.0
+            tag: v1.28.0
           - image: ghcr.io/nvidia/nvsentinel/preflight-dcgm-diag
-            tag: v1.26.0
+            tag: v1.28.0
           - image: ghcr.io/nvidia/nvsentinel/preflight-nccl-loopback
-            tag: v1.26.0
+            tag: v1.28.0
           - image: ghcr.io/nvidia/nvsentinel/preflight-nccl-allreduce
-            tag: v1.26.0
+            tag: v1.28.0
           - image: ghcr.io/nvidia/nvsentinel/nic-health-monitor
-            tag: v1.26.0
+            tag: v1.28.0
           - image: ghcr.io/nvidia/nvsentinel/slurm-drain-monitor
-            tag: v1.26.0
+            tag: v1.28.0
           - image: ghcr.io/nvidia/nvsentinel/fault-quarantine
-            tag: v1.26.0
+            tag: v1.28.0
           - image: ghcr.io/nvidia/nvsentinel/node-drainer
-            tag: v1.26.0
+            tag: v1.28.0
           - image: ghcr.io/nvidia/nvsentinel/fault-remediation
-            tag: v1.26.0
+            tag: v1.28.0
           - image: ghcr.io/nvidia/nvsentinel/janitor
-            tag: v1.26.0
+            tag: v1.28.0
           - image: ghcr.io/nvidia/nvsentinel/janitor-provider
-            tag: v1.26.0
+            tag: v1.28.0
           - image: ghcr.io/nvidia/nvsentinel/gpu-reset
-            tag: v1.26.0
+            tag: v1.28.0
           # Pinned by digest in recipes/components/slinky-drainer/manifests.
           - image: ghcr.io/nvidia/nvsentinel/slinky-drainer
-            tag: v1.26.0@sha256:29f8bbe52449ca0dccc34c1dba39c60c7c8a00cda00a5c5076dde9604dd27690
+            tag: v1.28.0@sha256:bf6ccaf1d6c035aa5f86e70a929dc6d9a18c5c05b10104d23c69aacff35bcb14
           - image: ghcr.io/nvidia/nvsentinel/health-events-analyzer
-            tag: v1.26.0
+            tag: v1.28.0
           # AICR's own pins in recipes/components/{psmdb-operator,nvsentinel-mongodb};
           # TestRemediationImagesPinnedEverywhere fails if these drift apart.
           - image: docker.io/percona/percona-server-mongodb-operator
             tag: 1.23.1@sha256:78c87b933e184b9af36dbb0078751862c75934c1521c33d3be4d0a38aa58dd0a
           - image: docker.io/percona/percona-server-mongodb
-            tag: 8.0.26-11@sha256:53f89c001997627554e6afc0feb5906209ba109f4f98c62f2ca8456c214af60c
+            tag: 8.0.32-14@sha256:5ba5f240d2dc98bc6236ab1d79c0862c4b62dba9d98cd0ffdf716c30473d2d11
           - image: docker.io/percona/mongodb_exporter
-            tag: 0.53.0@sha256:0214e482b2cd4b1849f9f4dcef90d328a99ba3727dd1103e7da48b42060bcec1
+            tag: 0.54.0@sha256:934e9db87e85e0fa63654e73c3504845993a254e898783ca905e65a68848b5a4
           - image: docker.io/percona/percona-backup-mongodb
             tag: 2.15.0@sha256:12dcba7f1b55e00eb1b49dac51427d942c221b826d621d6bfad926a9d959a7c5
           - image: docker.io/percona/fluentbit

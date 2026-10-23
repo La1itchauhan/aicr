@@ -64,16 +64,17 @@ deferred_verifications:
     opened: 2026-10-15
     document_version: 20
     why_deferred: >-
-      Version 20 is the first source document with no statements, and the
-      sbom-and-attest guard accepts that only since this revision. Only a
-      release runs the guard, the binder and `cosign attest` end to end, and
-      only the release scan in on-tag.yaml measures the arm64 aiperf-bench leg.
+      Version 20 was the first source document with no statements, and the
+      sbom-and-attest guard accepts that in source mode only since then. Only a
+      release runs the guard, the binder and `cosign attest` end to end.
+      v1.1.0-rc1 (run 39266148817) never reached the guard: its aiperf-bench
+      image scan failed on libexpat1 first, and version 21 is not empty, so the
+      re-cut does not measure the empty-source path either.
     check: >-
-      The first release cut from a main head containing document version 20
-      passes the sbom-and-attest "Verify OpenVEX document" step in source
-      mode, publishes an OpenVEX attestation with `"statements": []` on the
-      aiperf-bench linux/arm64 manifest, and its on-tag.yaml grype scan of the
-      aiperf-bench arm64 leg reports no python HIGH+.
+      The first release cut from a main head whose .openvex.json has
+      `"statements": []` passes the sbom-and-attest "Verify OpenVEX document"
+      step in source mode and publishes an OpenVEX attestation with
+      `"statements": []` on the aiperf-bench linux/arm64 manifest.
     how: |
       cosign verify-attestation --type openvex \
         --certificate-oidc-issuer https://token.actions.githubusercontent.com \
@@ -81,31 +82,14 @@ deferred_verifications:
         ghcr.io/nvidia/aicr-validators/aiperf-bench@<linux/arm64 digest> \
         | jq -rs '.[0].payload | @base64d | fromjson | .predicate.statements'
     resolves_when: >-
-      the release workflow for THE FIRST release after document version 20
-      has been inspected AND its guard step passed, the command above returned
-      `[]`, and the arm64 aiperf-bench release scan reported no python HIGH+.
-      A failure on that release is the finding to triage, not something a
-      later release discharges.
+      the release workflow for THE FIRST release whose source document has no
+      statements has been inspected AND its guard step passed and the command
+      above returned `[]`. A failure on that release is the finding to triage,
+      not something a later release discharges.
 
 known_negatives: []
 
 deliberate_exclusions:
-  - id: libexpat1-wont-fix-highs
-    decided: 2026-08-27
-    rechecked: 2026-10-15
-    decision: >-
-      The High findings on libexpat1 2.8.3-1~deb13u1 -- CVE-2026-66046, and
-      CVE-2026-76956 / CVE-2026-76957 seen on the same package at the 2026-09-17
-      recheck -- are deliberately NOT suppressed. Debian marks each wont-fix, so
-      `--only-fixed` already withholds them from the reported counts, and
-      pre-suppressing a wont-fix finding would hide it the moment a fix ships.
-      The same holds for CVE-2026-77214 and CVE-2026-93990 on that package,
-      which Debian lists as not yet fixed: both are present on
-      distroless/python:3.13-v4.1.7 for amd64 and arm64.
-    invalidated_by: >-
-      Debian shipping a fixed libexpat1; at that point the finding must surface
-      and be remediated by the weekly image rebuild, not suppressed
-
   - id: arm64-aiperf-bench-is-never-scanned
     decided: 2026-09-17
     decision: >-
@@ -132,45 +116,15 @@ deliberate_exclusions:
       release even though the weekly scan never sees it. The `invalidated_by`
       above still stands for vuln-scan-images.yaml, which remains amd64-only.
 
-  - id: nvsentinel-image-cves-are-a-pin-bump
-    decided: 2026-09-17
-    rechecked: 2026-10-08
-    decision: >-
-      HIGH+ findings on the nvsentinel images get no VEX statement. AICR does
-      not build them -- the scan matrix pins each to nvsentinel's registry
-      defaultVersion -- so the fix is a pin bump, and a statement would be a
-      reachability claim about third-party binaries this repo has no source
-      to support. That holds with no clean successor to bump to as well: the
-      fix then belongs upstream, as a rebuild, not here as a statement.
-      Current instance: every Go image at v1.26.0 is built on go1.27.0 with
-      golang.org/x/net v0.59.0 and carries GO-2026-6603/6605/6607/6608/6610/
-      6611/6612/6613 (2 critical and up to 10 high rows per image), fixed in
-      go1.27.2 and x/net v0.60.0; gpu-reset carries CVE-2026-84782 (High) on
-      libssl3t64 and openssl 3.0.13-0ubuntu3.15, fixed in 3.0.13-0ubuntu3.16.
-    evidence_2026_10_15: >-
-      grype 0.118.0 (the scan-action pin), `--only-fixed -c .grype.yaml`,
-      linux/amd64. v1.27.0, the newest tag, is not a clean successor:
-      fault-quarantine still reports 2 critical / 10 high on stdlib go1.27.0
-      and x/net v0.59.0, and gpu-reset 2 high on openssl
-      3.0.13-0ubuntu3.15. Only those two were scanned at v1.27.0, so a bump
-      must scan all fourteen.
-    invalidated_by: >-
-      an nvsentinel release built on go1.27.2+ and golang.org/x/net v0.60.0+
-      whose gpu-reset image carries openssl 3.0.13-0ubuntu3.16+ (then advance
-      defaultVersion in recipes/registry.yaml and the scan-matrix tags
-      together, after scanning every image), or AICR starting to build these
-      images, which would make their reachability provable from source
-
   - id: percona-image-cves-are-a-digest-bump
     decided: 2026-10-15
     decision: >-
       HIGH+ findings on the six Percona images in the scan matrix
       (percona-server-mongodb-operator, percona-server-mongodb,
       mongodb_exporter, percona-backup-mongodb, fluentbit, pmm-client) get no
-      VEX statement, for the reason that applies to nvsentinel: AICR pins them
-      by digest for the remediation mixins' datastore (psmdb-operator,
-      nvsentinel-mongodb) but does not build them, so the fix is a digest bump
-      to a cleaner upstream build. Scale at weekly run 38690982469:
+      VEX statement. AICR pins them by digest for the remediation mixins'
+      datastore (psmdb-operator, nvsentinel-mongodb) but does not build them,
+      so the fix is a digest bump to a cleaner upstream build. Scale at weekly run 38690982469:
       percona-server-mongodb 26 critical / 235 high, pmm-client 26 / 130,
       percona-backup-mongodb 6 / 108, percona-server-mongodb-operator 4 / 25,
       mongodb_exporter 2 / 21, fluentbit 1 / 17.

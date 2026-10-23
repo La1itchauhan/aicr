@@ -47,9 +47,9 @@ var remediationStepRender = []struct {
 		dryRun:      "true",
 		deployments: []string{"fault-quarantine", "node-drainer", "fault-remediation"},
 		images: append([]string{
-			"ghcr.io/nvidia/nvsentinel/fault-quarantine:v1.26.0",
-			"ghcr.io/nvidia/nvsentinel/node-drainer:v1.26.0",
-			"ghcr.io/nvidia/nvsentinel/fault-remediation:v1.26.0",
+			"ghcr.io/nvidia/nvsentinel/fault-quarantine:v1.28.0",
+			"ghcr.io/nvidia/nvsentinel/node-drainer:v1.28.0",
+			"ghcr.io/nvidia/nvsentinel/fault-remediation:v1.28.0",
 		}, perconaSetupImage),
 	},
 	{
@@ -57,8 +57,8 @@ var remediationStepRender = []struct {
 		dryRun:      "false",
 		deployments: []string{"fault-quarantine", "node-drainer"},
 		images: append([]string{
-			"ghcr.io/nvidia/nvsentinel/fault-quarantine:v1.26.0",
-			"ghcr.io/nvidia/nvsentinel/node-drainer:v1.26.0",
+			"ghcr.io/nvidia/nvsentinel/fault-quarantine:v1.28.0",
+			"ghcr.io/nvidia/nvsentinel/node-drainer:v1.28.0",
 		}, perconaSetupImage),
 	},
 	{
@@ -67,12 +67,12 @@ var remediationStepRender = []struct {
 		deployments: remediationDeployments,
 		maxAttempts: "3",
 		images: append([]string{
-			"ghcr.io/nvidia/nvsentinel/fault-quarantine:v1.26.0",
-			"ghcr.io/nvidia/nvsentinel/node-drainer:v1.26.0",
-			"ghcr.io/nvidia/nvsentinel/fault-remediation:v1.26.0",
-			"ghcr.io/nvidia/nvsentinel/janitor:v1.26.0",
-			"ghcr.io/nvidia/nvsentinel/janitor-provider:v1.26.0",
-			"ghcr.io/nvidia/nvsentinel/gpu-reset:v1.26.0",
+			"ghcr.io/nvidia/nvsentinel/fault-quarantine:v1.28.0",
+			"ghcr.io/nvidia/nvsentinel/node-drainer:v1.28.0",
+			"ghcr.io/nvidia/nvsentinel/fault-remediation:v1.28.0",
+			"ghcr.io/nvidia/nvsentinel/janitor:v1.28.0",
+			"ghcr.io/nvidia/nvsentinel/janitor-provider:v1.28.0",
+			"ghcr.io/nvidia/nvsentinel/gpu-reset:v1.28.0",
 		}, perconaSetupImage),
 	},
 }
@@ -84,14 +84,14 @@ var renderedSetupJob = regexp.MustCompile(`^release-nvsentinel-external-mongodb-
 
 // perconaSetupImage runs NVSentinel's external-datastore setup Job: the
 // mongod image, which ships mongosh.
-const perconaSetupImage = "docker.io/percona/percona-server-mongodb:8.0.26-11@sha256:53f89c001997627554e6afc0feb5906209ba109f4f98c62f2ca8456c214af60c"
+const perconaSetupImage = "docker.io/percona/percona-server-mongodb:8.0.32-14@sha256:5ba5f240d2dc98bc6236ab1d79c0862c4b62dba9d98cd0ffdf716c30473d2d11"
 
 // perconaImages are every image the separately bundled datastore renders,
 // pinned in recipes/components/{psmdb-operator,nvsentinel-mongodb}.
 var perconaImages = []string{
 	"docker.io/percona/percona-server-mongodb-operator:1.23.1@sha256:78c87b933e184b9af36dbb0078751862c75934c1521c33d3be4d0a38aa58dd0a",
 	perconaSetupImage,
-	"docker.io/percona/mongodb_exporter:0.53.0@sha256:0214e482b2cd4b1849f9f4dcef90d328a99ba3727dd1103e7da48b42060bcec1",
+	"docker.io/percona/mongodb_exporter:0.54.0@sha256:934e9db87e85e0fa63654e73c3504845993a254e898783ca905e65a68848b5a4",
 	"docker.io/percona/percona-backup-mongodb:2.15.0@sha256:12dcba7f1b55e00eb1b49dac51427d942c221b826d621d6bfad926a9d959a7c5",
 	"docker.io/percona/fluentbit:5.1.2-1@sha256:4926d7d003ca09c826a3dea5d9ccd0ba158296880471bcec82ef38f95617b913",
 	"docker.io/percona/pmm-client:3.9.1@sha256:298e731652e2be172a2505596edaee1e0c014609035347599048f62efae78e5b",
@@ -101,7 +101,7 @@ var perconaImages = []string{
 // The chart passes it as an env var, which aicr mirror cannot discover.
 const genericRebootImage = "docker.io/library/busybox:1.38.0@sha256:fd7dc98638c8e305f4dc34e979f1c0fdfdcaeb0fbf8fcff77ae834b6da3d7e6e"
 
-// chartDefaultRuleSets are fault-quarantine's rule sets at chart v1.26.0, in
+// chartDefaultRuleSets are fault-quarantine's rule sets at chart v1.28.0, in
 // evaluation order. AICR overrides none of them.
 var chartDefaultRuleSets = []string{
 	"GPU fatal error ruleset",

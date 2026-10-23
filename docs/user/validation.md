@@ -298,9 +298,12 @@ whether it is unreadable or carries an unrecognised banner.
 
 **Driver not loaded** is a fourth outcome, reached before any file is read: when
 `/proc/driver/nvidia` does not exist on a target node, the kubelet refuses the
-probe pod's hostPath mount and the preflight names that node as driver-absent
-instead of reporting a bare timeout or sending you to set the flag. There is no
-parameter to set until a driver is loaded. Finish the driver rollout (GPU
+probe pod's hostPath mount. If the preflight reads the kubelet's
+`hostPath type check failed` event and it is still the probe pod's latest
+event, it names that node as driver-absent instead of sending you to set the
+flag. Otherwise (the events cannot be read, none matches, or a later event
+for the pod has superseded it) it returns the original wait timeout. There
+is no parameter to set until a driver is loaded. Finish the driver rollout (GPU
 Operator `nvidia-driver` DaemonSet Ready, or a node image that ships the driver
 on OKE `oci-managed`) and re-run. The kubelet leaves the pod in
 `ContainerCreating`, so this surfaces after the probe's wait (up to two
@@ -1080,15 +1083,16 @@ After the command finishes:
     └── attestation.intoto.jsonl  # signed (when --push is set)
 ```
 
-The bundle is **minimized by default**: `snapshot.yaml` keeps only an
+The bundle is **minimized by default**. `snapshot.yaml` keeps only an
 allowlisted set of fields (dropping node names, provider instance IDs, the
 node label/taint set, OS tuning, loaded modules, and systemd config) and the
-CTRF reports omit per-test stdout/message — while *preserving* a small
-allowlisted set of structured, low-cardinality outcome fields (the CTRF `extra`
-object: coverage counts and skip-reason codes, never node names or IPs) so a
-signed bundle still distinguishes e.g. a reduced-node pass. The signed predicate
-records the applied policy in a `redaction` block, and the bundle self-verifies
-exactly like a full one. Pass `--full` to publish the raw payloads instead.
+CTRF reports omit per-test stdout/message. Each test's CTRF `extra` keeps only
+allowlisted counts, measurements, thresholds, versions, allocation modes,
+transport, fabric, and runtime-source codes, the `nodeLocal` and
+`versionSatisfied` booleans, and skip-reason codes, never node names or IPs, and
+is omitted when none remain. The signed predicate records the applied policy in
+a `redaction` block, and the bundle self-verifies exactly like a full one. Pass
+`--full` to publish the raw payloads instead.
 
 Commit `pointer.yaml` to its per-source path
 `recipes/evidence/<recipe>/<src>/<digest>.yaml` — the emit output prints
@@ -1419,7 +1423,7 @@ aicr validate \
   --toleration dedicated=worker-workload:NoExecute
 ```
 
-These flags affect the inner benchmark pods that run on GPU nodes (NCCL workers, Dynamo workers). The example above supplies `--snapshot`, so it does not launch the live snapshot agent. When `--snapshot` is omitted, the flags also configure that preliminary agent. With no toleration override, the agent tolerates all taints; an explicit `spec.validate.agent.tolerations: []` clears that default. Neither flag affects the validator orchestrator Job itself.
+These flags affect the inner benchmark pods that run on GPU nodes (NCCL workers, Dynamo workers). The NCCL `mpirun` launcher follows the workers' final node selector and tolerations, so it runs on a node that already holds the benchmark image; a recipe-supplied `nccl-benchmark-runtime` keeps its own launcher placement. The example above supplies `--snapshot`, so it does not launch the live snapshot agent. When `--snapshot` is omitted, the flags also configure that preliminary agent. With no toleration override, the agent tolerates all taints; an explicit `spec.validate.agent.tolerations: []` clears that default. Neither flag affects the validator orchestrator Job itself.
 
 For `inference-perf` specifically, `--node-selector` narrows the pool of candidate GPU nodes — the validator then picks the candidate with the most free GPUs (subtracting same-ledger occupancy only — DRA allocations from DRA capacity, device-plugin requests from device-plugin capacity — and skipping DRA candidates that carry scalar `nvidia.com/gpu` workloads) and pins all Dynamo Frontend + worker pods to that node via `kubernetes.io/hostname`. The AIPerf benchmark runner pod is CPU-only, uses a tolerate-all / no-nodeSelector pod spec, and is unaffected by these flags.
 

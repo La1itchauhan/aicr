@@ -36,10 +36,9 @@ import (
 )
 
 // One stock recipe declares k8s-aibom, h100-gke-cos-inference, under ADR-019's
-// stock-adoption amendment. That recipe is not a leaf — h100-gke-cos-inference-dynamo
-// bases on it and declines the component — and the stock render golden covers
-// leaves only, so no golden pins this component's rendered bytes and no KWOK
-// deployer lane exercises it per deployer.
+// stock-adoption amendment, and its leaf h100-gke-cos-inference-dynamo inherits
+// it. The stock render golden pins the component's bytes for that leaf under
+// the helm deployer only, and no KWOK deployer lane exercises it per deployer.
 //
 // These tests cover the per-deployer render: they build the same
 // single-component recipe an adopter would, from the live registry entry rather
@@ -47,8 +46,8 @@ import (
 // instead of silently diverging from them.
 //
 // They deliberately do not assert the stock-adoption contract — that the target
-// recipe enables the component, the Dynamo descendant declines it, and the
-// generation-time opt-out works. A synthetic single-component fixture cannot
+// recipe and its Dynamo descendant enable the component, the descendant orders
+// it after dynamo-platform, and the generation-time opt-out works. A synthetic single-component fixture cannot
 // see any of that, so flipping the target ref to `install: false` would leave
 // every assertion here green. That contract is pinned separately by
 // TestK8sAIBOMStockAdoption in pkg/recipe.
@@ -131,23 +130,13 @@ func qualifiedImageDigest(t *testing.T) string {
 // component to render through. localformat is deliberately absent: it is the
 // shared writer these paths build on, not a --deployer value, and it is
 // exercised directly by TestK8sAIBOM_VendoredChartRendersThroughWriter below.
-var k8sAIBOMDeployers = []struct {
-	name     string
-	deployer config.DeployerType
-}{
-	{name: "helm", deployer: config.DeployerHelm},
-	{name: "helmfile", deployer: config.DeployerHelmfile},
-	{name: "argocd", deployer: config.DeployerArgoCD},
-	{name: "argocd-helm", deployer: config.DeployerArgoCDHelm},
-	{name: "flux", deployer: config.DeployerFlux},
-	{name: "terraform", deployer: config.DeployerTerraform},
-}
+// Derived from config.GetDeployerTypes() so a new deployer cannot be left out.
+var k8sAIBOMDeployers = allDeployerCases()
 
-func bundleK8sAIBOM(t *testing.T, deployer config.DeployerType) string {
+func bundleK8sAIBOM(t *testing.T, dc deployerCase) string {
 	t.Helper()
 
-	cfg := config.NewConfig(
-		config.WithDeployer(deployer),
+	cfg := dc.configFor(
 		config.WithVersion("v1.0.0"),
 		config.WithDeterministic(true),
 		config.WithRepoURL("https://example.com/aicr-bundles.git"),
@@ -210,7 +199,7 @@ func TestK8sAIBOM_AllDeployersCarrySecureDefaults(t *testing.T) {
 
 	for _, tc := range k8sAIBOMDeployers {
 		t.Run(tc.name, func(t *testing.T) {
-			outputDir := bundleK8sAIBOM(t, tc.deployer)
+			outputDir := bundleK8sAIBOM(t, tc)
 
 			for _, req := range requiredLiterals {
 				if !bundleContainsBoth(t, outputDir, req.literal, req.literal) {
@@ -242,7 +231,7 @@ func TestK8sAIBOM_AllDeployersCarrySecureDefaults(t *testing.T) {
 // collectRenderedValues walks every YAML document in a rendered bundle and
 // returns each value found under the given key, at any depth.
 //
-// Depth-agnostic on purpose: the six deployers nest component values
+// Depth-agnostic on purpose: the deployers nest component values
 // differently (a numbered values.yaml, an Argo CD Application source, a Flux
 // HelmRelease's spec.values), and pinning the layout per deployer would make
 // this test break on every unrelated bundle-shape change while still not
@@ -312,7 +301,7 @@ func collectRenderedValues(t *testing.T, root, key string) []any {
 // the live Deployment by tools/k8s-aibom-test. Splitting it this way keeps the
 // per-PR half hermetic without weakening the claim.
 func TestK8sAIBOM_SystemSchedulingInjectionPaths(t *testing.T) {
-	outputDir := bundleK8sAIBOM(t, config.DeployerHelm)
+	outputDir := bundleK8sAIBOM(t, deployerCase{name: "helm", deployer: config.DeployerHelm})
 
 	valuesPath := filepath.Join("001-"+k8sAIBOMComponentName, "values.yaml")
 	valuesBytes := readBundleValues(t, outputDir, valuesPath)
@@ -355,7 +344,7 @@ func TestK8sAIBOM_SystemSchedulingInjectionPaths(t *testing.T) {
 // produces a bundle that only fails at deploy time, on a clean cluster — as
 // far from the change that caused it as a failure can get.
 func TestK8sAIBOM_HelmfileDisablesValidation(t *testing.T) {
-	outputDir := bundleK8sAIBOM(t, config.DeployerHelmfile)
+	outputDir := bundleK8sAIBOM(t, deployerCase{name: "helmfile", deployer: config.DeployerHelmfile})
 
 	raw, err := os.ReadFile(filepath.Join(outputDir, "helmfile.yaml"))
 	if err != nil {

@@ -126,6 +126,12 @@ type RecipeSpec struct {
 	// distinguish nil (absent in YAML/JSON) from &false (explicit
 	// opt-out); the resolved layer flattens to plain bool.
 	CriteriaStrict *bool `yaml:"criteriaStrict,omitempty" json:"criteriaStrict,omitempty"`
+
+	// RequireEvidence, when true, rejects a resolved recipe that has no
+	// committed evidence pointer. Mirrors the --require-evidence CLI flag
+	// and AICR_REQUIRE_EVIDENCE; any of the three enabling it is sufficient.
+	// Pointer so the spec can distinguish nil (absent) from &false.
+	RequireEvidence *bool `yaml:"requireEvidence,omitempty" json:"requireEvidence,omitempty"`
 }
 
 // RecipeConfigurationSpec contains typed desired-state inputs that do not
@@ -222,9 +228,11 @@ type DeploymentSpec struct {
 	Dynamic      []string `yaml:"dynamic,omitempty" json:"dynamic,omitempty"`
 	VendorCharts bool     `yaml:"vendorCharts,omitempty" json:"vendorCharts,omitempty"`
 	// AppName overrides the parent Argo Application's `metadata.name` for the
-	// argocd-helm and argocd deployers. Empty means each deployer applies its
-	// own default ("aicr-stack" / "nvidia-stack"). Required for multi-bundle
-	// installs that share an Argo CD namespace. See #1011.
+	// argocd-helm and argocd deployers, and names the GitRepo and prefixes
+	// every bundle name for the fleet deployer. Empty means each deployer
+	// applies its own default ("aicr-stack" / "nvidia-stack" / "aicr").
+	// Required for multi-bundle installs that share an Argo CD namespace or
+	// Fleet workspace. See #1011.
 	AppName string `yaml:"appName,omitempty" json:"appName,omitempty"`
 }
 

@@ -206,7 +206,7 @@ type Reading interface {
   merely unavailable.
 - Each collector sets its own timeout rather than sharing a universal
   one — e.g. 10s (OS, systemd), 60s (Kubernetes), 90s (node topology),
-  5s (NFD GPU detection), up to 10m (network discovery)
+  5s (NFD GPU detection), up to 7m (network discovery)
 
 ## Stage 2: Recipe (Data Optimization)
 
@@ -477,10 +477,10 @@ RecipeResult
 `pkg/bundler/registry` exists but is **not** used by the production path: the
 default flow constructs a single `DefaultBundler`, extracts values for every
 component in one `DefaultBundler` invocation, builds one deployer
-(helm/argocd/argocd-helm/flux/helmfile/terraform), and invokes it once. Static values land in `values.yaml`; dynamic, per-cluster values land in
+(helm/argocd/argocd-helm/flux/helmfile/terraform/fleet), and invokes it once. Static values land in `values.yaml`; dynamic, per-cluster values land in
 `cluster-values.yaml`. Every component is handled in that single invocation, not by separate
 per-component bundlers. The per-component file layout above is the **Helm**
-deployer's; argocd/argocd-helm/flux/helmfile/terraform emit their own layouts.
+deployer's; argocd/argocd-helm/flux/helmfile/terraform/fleet emit their own layouts.
 Finalization treats each deployer output as a closed-world inventory:
 `checksums.txt` lists every regular payload file, including `recipe.yaml` when
 present, and verification rejects additional files, directories, symlinks, or

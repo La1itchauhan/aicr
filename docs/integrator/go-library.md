@@ -73,7 +73,7 @@ go get github.com/NVIDIA/aicr@latest
 For reproducibility in downstream projects, pin a specific tag:
 
 ```bash
-go get github.com/NVIDIA/aicr@v0.22.0
+go get github.com/NVIDIA/aicr@v1.0.0
 ```
 
 ## Quick start
@@ -282,7 +282,7 @@ snap, err := client.CollectSnapshot(snapCtx, &aicr.AgentConfig{
 	// full run-scoped RBAC set. Leaving it unset, as here, keeps the
 	// run-scoped default and never probes for an existing ServiceAccount.
 	Namespace:       "aicr-snapshot",
-	Image:           "ghcr.io/nvidia/aicr:v0.22.0",
+	Image:           "ghcr.io/nvidia/aicr:v1.0.0",
 	Timeout:         5 * time.Minute,
 	Cleanup:         true,
 	AKSGPUPoolsPath: "/path/to/aks-gpu-pools.json", // AKS only
@@ -1107,6 +1107,17 @@ derive step rather than the load step.
 | `RecipeOutputOptions()` | `spec.recipe.output` |
 | `SnapshotPath()` | `spec.recipe.input.snapshot` |
 | `IsCriteriaStrict()` | `spec.recipe.criteriaStrict` |
+| `IsRequireEvidence()` | `spec.recipe.requireEvidence` |
+
+`IsRequireEvidence()` is a read, like `IsCriteriaStrict()`. It does not change
+resolution. After `ResolveRecipe`, call `PublishedEvidenceRequired` to combine
+that field with a flag and `AICR_REQUIRE_EVIDENCE`, then
+`Client.RequirePublishedEvidence` when it reports true. That call rejects a
+Client whose recipe source is not `EmbeddedSource()`, including
+`FilesystemSource` from `--data` or `spec.recipe.data`, before it checks the
+leaf. A committed pointer attests the embedded catalog only. `ResolveRecipe`
+itself does not apply the check, so bundle, mirror, and upgrade stay
+unaffected.
 
 All five spec sections have a derivation, and every one of them has a
 destination. `SnapshotOutputOptions()` projects `spec.snapshot.output` even
